@@ -1,0 +1,6 @@
+requests
+pyserial
+numpy
+opencv-python
+ultralytics
+pytest

@@ -1,0 +1,25 @@
+# fas-edge-vision.service + fas-edge-emergency.service를 하나로 합친 유닛.
+# /dev/ttyUSB0은 배타적이라 프로세스 하나만 열 수 있는데, main.py가 무게를 실시간으로
+# 읽으려고 포트를 계속 쥐게 되면서 emergency 서버가 포트를 못 열게 됐다.
+# 이제 main.py가 emergency 서버를 스레드로 품고, 비상 명령도 같은 시리얼 연결로 내보낸다.
+[Unit]
+Description=FAS Edge - Vision loop + emergency listener (single serial owner)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+# API 주소/디바이스 키는 여기서 주입 (git에 올리지 않음)
+EnvironmentFile=/home/min/FAS-edge/.env
+Type=simple
+User=min
+# emergency 서버가 포트 80에 바인드해야 함 (root로 올리지 않기 위해 capability만 부여)
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+WorkingDirectory=/home/min/FAS-edge
+ExecStart=/home/min/FAS-edge/venv-yolo11/bin/python /home/min/FAS-edge/main.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

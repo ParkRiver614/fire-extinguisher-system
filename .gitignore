@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.pnpm-store/
+
+# Raspberry Pi edge — 비밀값/런타임 산출물
+FAS-edge/.env
+FAS-edge/capture_tmp/
+FAS-edge/.pytest_cache/
+FAS-edge/*.pt
+FAS-edge/reference.jpg
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Misc
+*.log
