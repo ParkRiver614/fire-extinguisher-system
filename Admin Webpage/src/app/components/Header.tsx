@@ -1,3 +1,8 @@
+/**
+ * 상단 헤더 — 현재 화면 이름, 통합 검색, 알림 벨.
+ * 검색창은 입력할 때마다 소화기 ID / 알림 ID 후보를 최대 5개 추천하고,
+ * 방향키·엔터로 고를 수 있다. 실제 이동 처리는 상위(App.handleSearch)가 한다.
+ */
 import { useState, useMemo, useRef, useEffect } from "react";
 import { ArrowLeft, Bell, Search, X } from "lucide-react";
 import { Alert } from "./Alerts";
@@ -19,6 +24,7 @@ type SuggestionItem =
   | { kind: "device"; id: string; zone: string; status: Device["status"] }
   | { kind: "alert"; id: string; alertType: Alert["type"]; zone: string };
 
+// 화면별 제목/부제 — 사이드바 선택에 따라 헤더 문구가 바뀐다.
 const PAGE_META: Record<SidebarPage, { label: string; sub: string }> = {
   dashboard: { label: "실시간 모니터링", sub: "Live Dashboard" },
   devices: { label: "장치 관리", sub: "Device Management" },
@@ -48,6 +54,7 @@ const ALERT_TYPE_LABEL: Record<string, string> = {
   Obstacle: "장애물",
 };
 
+// 추천 목록에서 검색어와 일치하는 부분만 강조 표시
 function HighlightMatch({ text, query }: { text: string; query: string }) {
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (!query || idx === -1) return <>{text}</>;
@@ -72,6 +79,7 @@ export function Header({ activePage, showBack, onBack, onNavigate, onSearch, ale
   const activeAlerts = alerts.filter((alert) => alert.status === "active");
   const visibleAlerts = activeAlerts.slice(0, 5);
 
+  // 검색 추천 목록. "AL-"로 시작하면 알림을 먼저, 아니면 소화기를 먼저 보여 준다(합쳐서 최대 5개).
   const suggestions = useMemo((): SuggestionItem[] => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -100,6 +108,7 @@ export function Header({ activePage, showBack, onBack, onNavigate, onSearch, ale
     setDropdownOpen(suggestions.length > 0);
   }, [suggestions]);
 
+  // 검색창 바깥을 클릭하면 추천 목록을 닫는다.
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
@@ -111,6 +120,7 @@ export function Header({ activePage, showBack, onBack, onNavigate, onSearch, ale
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, []);
 
+  // 검색 실행 — 어디로 이동하는지 안내 문구를 잠깐 띄우고 상위로 검색어를 넘긴다.
   const executeSearch = (value: string) => {
     if (!value.trim()) return;
 
@@ -131,6 +141,7 @@ export function Header({ activePage, showBack, onBack, onNavigate, onSearch, ale
   const runSearch = () => executeSearch(query.trim());
   const selectSuggestion = (id: string) => executeSearch(id);
 
+  // 키보드 조작: ↑/↓로 추천 이동, Enter로 선택(선택된 항목이 없으면 입력값 그대로 검색).
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!dropdownOpen || suggestions.length === 0) {
       if (e.key === "Enter") runSearch();

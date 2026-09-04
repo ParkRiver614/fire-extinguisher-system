@@ -1,3 +1,8 @@
+/**
+ * 로그인 화면.
+ * 이메일/비밀번호를 서버로 보내 토큰을 받고, 관리자 웹 접근 권한이 있는 계정만 통과시킨다.
+ * "로그인 유지"를 켜면 토큰을 localStorage에, 끄면 sessionStorage에 저장한다(auth.ts).
+ */
 import { useState } from "react";
 import { Eye, EyeOff, ShieldCheck, Loader2 } from "lucide-react";
 import { AuthError, AuthUser, canAccessAdmin, login } from "../auth";
@@ -16,6 +21,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [rememberMe, setRememberMe] = useState(false);
   const [notice, setNotice] = useState("");
 
+  // 제출: 빈 값 검사 → 로그인 요청 → 권한 확인 → 성공 시 상위(App)에 사용자 전달
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedEmail = email.trim();

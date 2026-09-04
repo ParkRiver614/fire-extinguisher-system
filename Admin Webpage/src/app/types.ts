@@ -1,3 +1,7 @@
+/**
+ * 백엔드 DB 스키마와 짝을 이루는 공용 타입 정의.
+ * 화면 여러 곳에서 같은 구조를 주고받으므로 여기 한 곳에서만 정의한다.
+ */
 export type DeviceStatus = "normal" | "warning" | "error" | "fire" | "offline" | "maintenance" | "obstacle";
 
 // ─── DB Entity Types ──────────────────────────────────────────────────────────

@@ -1,3 +1,12 @@
+/**
+ * 설정 화면.
+ *
+ * 네 가지 묶음을 다룬다 — 알림 on/off와 비전 추론 주기, 층·구역과 도면 이미지,
+ * 점검 주기, 비상 동작(LED·부저). 각 묶음은 서버의 /api/settings/* 에 따로 저장한다.
+ * 화면 값(formData/floors)과 저장된 값(savedFormData/savedFloors)을 나눠 들고 있어
+ * "취소"를 누르면 마지막 저장 상태로 되돌릴 수 있다.
+ * 도면 이미지는 편집기에서 만든 결과를 대기 목록에 모아 두었다가 저장할 때 업로드/삭제한다.
+ */
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -42,6 +51,7 @@ export interface FloorConfig {
   defaultMapUrl?: string;
 }
 
+// 서버에서 층 정보를 못 받았을 때 쓰는 기본 층 구성(평면도·보고서도 이 값을 공유한다).
 export const DEFAULT_FLOORS: FloorConfig[] = [
   { key: "B1", label: "지하 1층 (B1)", zones: "주차장, 창고", mapFileName: "", defaultMapUrl: "/floor-maps/floor-b1.png" },
   { key: "1F", label: "1층 (Floor 1)", zones: "로비, 복도, 계단", mapFileName: "", defaultMapUrl: "/floor-maps/floor-1f.png" },
@@ -134,6 +144,7 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // 층·구역·도면 이미지를 서버에서 받아 화면값과 저장값에 함께 넣는다(취소 시 되돌릴 기준).
   useEffect(() => {
     fetch(`${API_BASE}/api/floors/detail`, { headers: authHeaders() })
       .then((r) => r.json())
@@ -161,6 +172,7 @@ export function Settings() {
       .catch(() => {});
   }, []);
 
+  // 설정 4종(알림/점검/비상/비전)을 한 번에 받아 폼을 채운다.
   useEffect(() => {
     Promise.all([
       fetch(`${API_BASE}/api/settings/alerts`, { headers: authHeaders() }).then((r) => r.json()),
@@ -215,6 +227,7 @@ export function Settings() {
     }
   };
 
+  // 층 삭제 — 서버 요청이 실패해도 화면에서는 지운다(다음 로드 때 서버 값으로 맞춰진다).
   const deleteFloor = async (index: number) => {
     const floor = floors[index];
     if (floor.floorId) {
@@ -242,6 +255,7 @@ export function Settings() {
     if (expandedFloor === floor.key) setExpandedFloor(null);
   };
 
+  // 층 추가 — 서버에 만들고 받은 ID를 함께 보관한다(실패 시 화면에만 추가).
   const addFloor = async () => {
     const newKey = `F${floors.length + 1}`;
     const newLabel = `${floors.length + 1}층`;
@@ -266,6 +280,7 @@ export function Settings() {
     setExpandedFloor(newKey);
   };
 
+  // 도면 삭제는 바로 반영하지 않고 대기 목록에 넣는다 — 저장을 눌러야 서버에서 지워진다.
   const deleteFloorMap = (floorKey: string) => {
     setPendingImageDeletes((prev) => {
       if (!savedFloorMaps[floorKey]) return prev.filter((k) => k !== floorKey);
@@ -283,6 +298,7 @@ export function Settings() {
     });
   };
 
+  // 편집기에서 만든 도면을 업로드 대기 목록에 넣고 미리보기에 반영한다.
   const applyEditedFloorMap = (floorKey: string, fileName: string, data: string) => {
     setPendingImageUploads((prev) => ({ ...prev, [floorKey]: { fileName, dataUrl: data } }));
     setPendingImageDeletes((prev) => prev.filter((k) => k !== floorKey));
@@ -293,6 +309,8 @@ export function Settings() {
 
   type SettingsGroup = { url: string; body: Record<string, unknown>; apply: Partial<SettingsFormData> };
 
+  // 설정 묶음들을 저장한다. 일부만 실패해도 성공한 항목은 저장값에 반영하고,
+  // 실패한 항목만 모아 오류 메시지로 알린다.
   const putSettingsGroups = async (groups: SettingsGroup[]) => {
     const results = await Promise.all(
       groups.map((group) =>
@@ -316,6 +334,7 @@ export function Settings() {
     if (failed.length > 0) throw new Error(`저장 실패: ${failed.join(", ")}`);
   };
 
+  // 저장 공통 처리 — 저장 중 표시, 성공 시 3초간 완료 표시, 실패 시 오류 메시지.
   const runSave = async (task: () => Promise<void>) => {
     setSaving(true);
     setSaveError(null);
@@ -397,6 +416,8 @@ export function Settings() {
       ])
     );
 
+  // 층 설정 저장 — 도면 업로드 → 도면 삭제 → 층/구역 정보 갱신 순으로 처리한다.
+  // (도면 편집 결과는 canvas의 data URL이므로 업로드 직전에 파일로 되돌린다)
   const handleSaveZones = () =>
     runSave(async () => {
       // Upload pending images
@@ -457,6 +478,7 @@ export function Settings() {
 
   const handleSave = () => SAVE_HANDLERS[activeCategory]();
 
+  // 현재 보고 있는 묶음만 마지막 저장 상태로 되돌린다.
   const handleCancel = () => {
     switch (activeCategory) {
       case "alerts":
@@ -982,6 +1004,11 @@ function TextField({
   );
 }
 
+/**
+ * 도면 이미지 편집기.
+ * 업로드한 평면도를 확대·이동·회전하고 밝기/대비/흑백을 조정해 canvas에 그린 뒤,
+ * "적용"을 누르면 그려진 결과를 이미지 데이터로 뽑아 상위에 넘긴다.
+ */
 function FloorPlanEditor({
   draft,
   floorLabel,
@@ -1009,6 +1036,7 @@ function FloorPlanEditor({
     img.src = draft.source;
   }, [draft.source]);
 
+  // 현재 조정값대로 canvas에 다시 그린다. 90/270도 회전 시에는 가로·세로를 바꿔 맞춤 배율을 계산.
   const drawPreview = () => {
     const canvas = canvasRef.current;
     if (!canvas || !image) return;

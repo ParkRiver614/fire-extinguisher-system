@@ -1,3 +1,10 @@
+"""ESP32 시리얼 통신 — 센서값 실시간 수신 + 명령 송신.
+
+/dev/ttyUSB0을 리더 스레드가 계속 쥐고 가스/무게/온습도를 읽어 최신값으로 갱신하고,
+무게가 임계값을 오르내리면 디바운스를 거쳐 이탈/거치 변화를 콜백으로 알린다.
+비상 명령(LED/부저)도 같은 연결로 나간다.
+"""
+
 import threading
 import time
 from typing import Callable
@@ -30,6 +37,7 @@ _reader_started = False
 
 
 def _parse_line(line: str) -> list[dict]:
+    """ESP32 한 줄("GAS:614,WEIGHT:0.6,...")을 서버 전송용 센서 목록으로 변환. 모르는 키·깨진 값은 버린다."""
     readings = []
     for part in line.split(","):
         key, _, value = part.partition(":")

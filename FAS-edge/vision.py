@@ -1,3 +1,9 @@
+"""카메라 촬영 + 장애물 판단.
+
+촬영(cam→ffmpeg) → YOLO11n 추론(사람 박스 확보) → 기준 사진과의 배경 차분으로
+소화기 앞이 가려졌는지(obstacle_detected) 판단한다. 사람은 차분 마스크에서 제외.
+"""
+
 import os
 import glob
 import subprocess
@@ -17,6 +23,7 @@ _model = None
 
 
 def _get_model():
+    """YOLO 모델은 로딩이 무거우므로 첫 호출 때 한 번만 올려 재사용한다."""
     global _model
     if _model is None:
         _model = YOLO(YOLO_MODEL)

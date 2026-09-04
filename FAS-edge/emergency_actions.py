@@ -1,3 +1,5 @@
+"""비상 명령을 ESP32 시리얼 명령 문자열로 바꿔 내보내는 어댑터."""
+
 from sensors_esp32 import send_command
 
 

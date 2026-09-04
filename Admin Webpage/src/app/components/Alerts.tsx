@@ -1,3 +1,9 @@
+/**
+ * 알림 화면.
+ *
+ * 실시간으로 받은 알림 목록을 검색·유형·상태·기간으로 걸러 표로 보여 주고,
+ * 정렬·페이지 이동·CSV 내보내기를 지원한다. 알림 해제는 operator 이상 권한만 가능.
+ */
 import { useMemo, useState, useEffect } from "react";
 import {
   AlertCircle,
@@ -37,6 +43,7 @@ export interface Alert {
 
 export const INITIAL_ALERTS: Alert[] = [];
 
+// 알림 유형별 표시(라벨·색·아이콘)
 const TYPE_CONFIG: Record<AlertType, { label: string; color: string; bg: string; textColor: string; Icon: React.ElementType }> = {
   Obstacle:   { label: "장애물", color: "#F59E0B", bg: "#FEF3C7", textColor: "#92400E", Icon: AlertTriangle },
   Missing:    { label: "미감지", color: "#94A3B8", bg: "#F1F5F9", textColor: "#475569", Icon: PackageX },
@@ -75,6 +82,7 @@ export function Alerts({ alerts, status, error, onRefresh, onResolve, externalSe
   const [refreshing, setRefreshing] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
 
+  // 헤더 검색으로 넘어온 경우 — 해당 알림이 이미 해결됐을 수도 있으니 상태 필터를 전체로 푼다.
   useEffect(() => {
     if (externalSearch) {
       setSearch(externalSearch);
@@ -83,6 +91,7 @@ export function Alerts({ alerts, status, error, onRefresh, onResolve, externalSe
     }
   }, [externalSearch]);
 
+  // 검색어(필드 지정 가능) + 유형 + 상태 + 기간(오늘/7일/30일) 조건을 모두 만족하는 알림만 남긴다.
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     const now = new Date();
@@ -121,6 +130,7 @@ export function Alerts({ alerts, status, error, onRefresh, onResolve, externalSe
     });
   }, [alerts, dateRange, search, searchFilter, statusFilter, typeFilter]);
 
+  // 선택된 열 기준 정렬(정렬 해제 상태면 원래 순서 유지)
   const sorted = useMemo(() => {
     if (!sortField) return filtered;
 
@@ -141,6 +151,7 @@ export function Alerts({ alerts, status, error, onRefresh, onResolve, externalSe
     fire: alerts.filter((alert) => alert.type === "Fire" && alert.status === "active").length,
   };
 
+  // 같은 열을 계속 누르면 오름차순 → 내림차순 → 정렬 해제로 순환한다.
   const handleSort = (field: keyof Alert) => {
     if (sortField === field) {
       if (sortDir === "asc") setSortDir("desc");
@@ -166,6 +177,7 @@ export function Alerts({ alerts, status, error, onRefresh, onResolve, externalSe
     }
   };
 
+  // 알림 해제 — 처리 중 중복 클릭을 막는다.
   const handleResolve = async (id: string) => {
     if (resolvingId) return;
     setResolvingId(id);
@@ -590,11 +602,13 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
 
 const MIN_LOADING_MS = 400;
 
+// 응답이 너무 빨라 스피너가 깜빡이고 마는 것을 막기 위해 최소 0.4초는 로딩 상태를 유지한다.
 async function ensureMinDuration<T>(promise: Promise<T>): Promise<T> {
   const [result] = await Promise.all([promise, new Promise((resolve) => setTimeout(resolve, MIN_LOADING_MS))]);
   return result;
 }
 
+// 화면 표시용 "2026.09.04 12:00:00" 형식을 Date로 되돌린다(기간 필터용).
 function parseAlertDate(value: string) {
   const normalized = value.replace(/\./g, "-");
   const parsed = new Date(normalized);

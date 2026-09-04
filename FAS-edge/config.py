@@ -1,3 +1,10 @@
+"""엣지(라즈베리파이) 공통 설정값 모음.
+
+경로·API 주소·디바이스 키, 카메라 촬영 파라미터, 배경 차분 임계값,
+ESP32 시리얼/로드셀 판정 기준을 한곳에 모아 둔다.
+시크릿(FAS_API_BASE, FAS_DEVICE_API_KEY)은 .env → systemd EnvironmentFile로 주입.
+"""
+
 import os
 
 # 이 파일이 놓인 디렉터리(~/FAS-edge)를 기준으로 잡는다.
@@ -24,6 +31,7 @@ EXCLUDED_CLASSES = {"person"}  # 사람은 장애물 판단에서 제외(배경 
 
 
 def get_mac_address() -> str:
+    """이 기기의 MAC 주소 — 서버가 디바이스를 식별하는 키로 쓴다(무선 우선, 없으면 유선)."""
     for iface in ("wlan0", "eth0"):
         path = f"/sys/class/net/{iface}/address"
         if os.path.exists(path):

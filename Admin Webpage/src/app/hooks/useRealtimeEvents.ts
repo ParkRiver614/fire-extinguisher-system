@@ -1,3 +1,11 @@
+/**
+ * 실시간 알림/이벤트 수신 훅.
+ *
+ * 1) 로그인되면 먼저 /api/alerts, /api/events로 현재 목록을 한 번 받아오고(refresh)
+ * 2) 이어서 스트림(SSE 기본, VITE_REALTIME_URL이 ws면 WebSocket)에 붙어 새 이벤트를 밀어 받는다.
+ * 끊기면 지수 백오프로 자동 재연결하고, 화면에는 연결 상태(status)와 오류 메시지를 넘겨준다.
+ * 서버 응답 필드명이 제각각(snake/camel)이라 normalizeAlert/normalizeEvent에서 한 형태로 맞춘다.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertStatus, AlertType } from "../components/Alerts";
 import { EventLogEntry, EventLogType, RealtimeStatus } from "../components/EventLog";
@@ -14,7 +22,7 @@ type StreamPayload =
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const REALTIME_URL = import.meta.env.VITE_REALTIME_URL as string | undefined;
-const MAX_EVENTS = 100;
+const MAX_EVENTS = 100; // 이벤트 로그는 최근 100건만 메모리에 유지
 
 export function useRealtimeEvents(enabled: boolean) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -24,6 +32,7 @@ export function useRealtimeEvents(enabled: boolean) {
   const reconnectTimerRef = useRef<number | null>(null);
   const retryCountRef = useRef(0);
 
+  // 초기 목록 로드(수동 새로고침에도 사용). 한쪽만 실패해도 성공한 쪽은 반영한다.
   const refresh = useCallback(async () => {
     if (!enabled) return;
 
@@ -50,6 +59,7 @@ export function useRealtimeEvents(enabled: boolean) {
     }
   }, [enabled]);
 
+  // 알림 해제 — 서버 응답에 갱신된 알림이 오면 그것으로, 없으면 status만 resolved로 바꿔 화면에 반영.
   const resolveAlert = useCallback(async (id: string) => {
     const response = await fetch(`${API_BASE}/api/alerts/${encodeURIComponent(id)}/resolve`, {
       method: "POST",
@@ -91,6 +101,7 @@ export function useRealtimeEvents(enabled: boolean) {
       }
     };
 
+    // 재연결 백오프: 1초 → 2 → 4 … 최대 30초. 연결에 성공하면 retryCount가 0으로 리셋된다.
     const scheduleReconnect = () => {
       if (stopped) return;
       const delay = Math.min(30000, 1000 * 2 ** retryCountRef.current);
@@ -99,6 +110,7 @@ export function useRealtimeEvents(enabled: boolean) {
       reconnectTimerRef.current = window.setTimeout(connect, delay);
     };
 
+    // 스트림 수신 처리 — "snapshot"은 목록 전체 교체, 그 외에는 알림/이벤트 1건씩 병합(같은 id는 최신으로 대체).
     const handlePayload = (payload: StreamPayload) => {
       if (payload.type === "snapshot") {
         setAlerts(readArray(payload.alerts, "alerts").map(normalizeAlert).filter(isAlert));
@@ -119,6 +131,7 @@ export function useRealtimeEvents(enabled: boolean) {
       }
     };
 
+    // 스트림 연결. SSE는 커스텀 헤더를 못 붙이므로 토큰을 쿼리스트링으로 넘긴다.
     const connect = () => {
       if (stopped) return;
       setStatus("connecting");
@@ -193,12 +206,14 @@ async function readOptionalJson(response: Response) {
   return text ? JSON.parse(text) : null;
 }
 
+// 응답이 배열이든 {alerts:[...]}/{events:[...]}든 배열로 꺼낸다.
 function readArray(value: unknown, key: string) {
   if (Array.isArray(value)) return value;
   if (isRecord(value) && Array.isArray(value[key])) return value[key];
   return [];
 }
 
+// 서버 알림 → 화면용 Alert. 필드명이 여러 형태로 와도 받아들이고, 시각은 표시용으로 미리 포맷한다.
 function normalizeAlert(value: unknown): Alert | null {
   if (!isRecord(value)) return null;
 
@@ -220,6 +235,7 @@ function normalizeAlert(value: unknown): Alert | null {
   };
 }
 
+// 서버 이벤트 → 이벤트 로그 한 줄. id가 없으면 시각+내용으로 만들어 중복 제거에 쓴다.
 function normalizeEvent(value: unknown): EventLogEntry | null {
   if (!isRecord(value)) return null;
 
@@ -257,6 +273,7 @@ function normalizeEventType(value: unknown): EventLogType {
   return "normal";
 }
 
+// 필수 항목이 빠진 레코드는 화면에 올리지 않는다.
 function isAlert(value: Alert | null): value is Alert {
   return Boolean(value?.id && value.extinguisherId && value.detail);
 }

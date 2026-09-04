@@ -1,3 +1,10 @@
+/**
+ * 소화기 관리 화면.
+ *
+ * 등록된 소화기를 표로 보여 주고(검색·상태 필터·정렬·페이지), 등록/수정/삭제와
+ * 선택 항목 일괄 삭제·일괄 유지보수, CSV 내보내기를 처리한다.
+ * 권한에 따라 버튼이 갈린다 — 등록·수정·삭제는 manager 이상, 유지보수는 operator 이상.
+ */
 import { useState, useMemo, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
@@ -16,6 +23,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// 층 키("B1","1F","RF")를 정렬용 숫자로 — 지하는 음수, 옥상은 가장 위.
 function parseLevel(key: string): number {
   if (key === "RF") return 99;
   if (key.startsWith("B")) { const n = parseInt(key.slice(1)); return isNaN(n) ? -1 : -n; }
@@ -50,6 +58,7 @@ function todayStr() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+// 소화기 유효기간은 설치일로부터 3년 — 입력이 없으면 이 값으로 채운다.
 function expiryFromInstall(install: string): string {
   const d = new Date(install);
   d.setFullYear(d.getFullYear() + 3);
@@ -78,6 +87,7 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
   const [zoneOptions, setZoneOptions] = useState<{ zone_id: number; zone_name: string; floor_id: number }[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
 
+  // 등록 폼의 선택지(층·구역·소화기 모델)를 서버에서 받아 둔다.
   useEffect(() => {
     fetch(`${API_BASE}/api/floors/detail`, { headers: authHeaders() })
       .then((r) => r.json())
@@ -199,6 +209,7 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
     else setSelected(new Set(pageItems.map((d) => d.id)));
   };
 
+  // 삭제는 두 번 눌러야 실행된다 — 첫 클릭은 확인 대기 상태(3초 뒤 자동 취소).
   const handleDelete = async (id: string) => {
     if (pendingDelete !== id) {
       setPendingDelete(id);
@@ -264,6 +275,7 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
     });
   };
 
+  // 선택 항목 일괄 유지보수 — 전부 유지보수 중이면 "완료" 모달로, 아니면 유지보수 시작.
   const handleBulkMaintenance = async () => {
     const selectedDevicesList = devices.filter((d) => selected.has(d.id));
     const allMaintenance = selectedDevicesList.every((d) => d.status === "maintenance");
@@ -389,6 +401,7 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
     setEditingDeviceId(null);
   };
 
+  // 수정 버튼 — 선택한 소화기 값으로 등록 폼을 채우고 수정 모드로 바꾼다.
   const handleEdit = (device: Device) => {
     const floor = floorOptions.find((f) => f.floor_name === device.floor_name) ?? floorOptions.find((f) => f.floor_id === device.floor_id);
     const zone = zoneOptions.find((z) => z.zone_name === device.zone_name && z.floor_id === floor?.floor_id)
@@ -442,6 +455,8 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
     return e;
   };
 
+  // 등록/수정 저장 — 입력 검증 후 서버에 보내고, 성공하면 목록 상태도 갱신한다.
+  // ID를 비워 두면 FE-<번호>로 자동 생성하고, 새 소화기는 상위에 알려 평면도 배치 대기로 표시한다.
   const handleSubmit = async (ev: React.FormEvent<HTMLFormElement>) => {
     ev.preventDefault();
     const e = validate();

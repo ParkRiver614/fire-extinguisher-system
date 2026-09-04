@@ -1,3 +1,7 @@
+/**
+ * 좌측 사이드바 — 화면 이동, 로그인 사용자 정보, 소화기 상태 요약, 로그아웃.
+ * 메뉴는 로그인 계정의 역할(role)로 걸러 보여 준다.
+ */
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -14,6 +18,7 @@ import { hasMinRole } from "../permissions";
 
 export type SidebarPage = "dashboard" | "devices" | "alerts" | "reports" | "settings" | "managers";
 
+// 메뉴 정의 — minRole 이상의 권한을 가진 계정에게만 노출된다(permissions.hasMinRole).
 const NAV_ITEMS: { key: SidebarPage; icon: React.ElementType; label: string; en: string; minRole: AdminRole }[] = [
   { key: "dashboard", icon: LayoutDashboard, label: "대시보드", en: "Dashboard", minRole: "viewer" },
   { key: "devices", icon: ShieldCheck, label: "장치 관리", en: "Devices", minRole: "viewer" },
@@ -33,6 +38,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activePage, onNavigate, onLogout, user, alertCount, devices }: SidebarProps) {
+  // 프로필 아이콘에 표시할 이니셜(이름 앞 두 글자)
   const initials = user.name
     .split(" ")
     .map((part) => part[0])
@@ -40,6 +46,7 @@ export function Sidebar({ activePage, onNavigate, onLogout, user, alertCount, de
     .slice(0, 2)
     .toUpperCase();
 
+  // 하단 상태 요약 — 위험(빨강)에는 이상·오프라인·화재를 함께 센다.
   const normalCount = devices.filter((d) => d.status === "normal").length;
   const warningCount = devices.filter((d) => d.status === "warning").length;
   const criticalCount = devices.filter((d) => d.status === "error" || d.status === "offline" || d.status === "fire").length;
@@ -138,6 +145,7 @@ export function Sidebar({ activePage, onNavigate, onLogout, user, alertCount, de
   );
 }
 
+// 상태 요약 한 줄(색 점 + 개수 + 라벨)
 function StatusDot({ color, count, label }: { color: string; count: number; label: string }) {
   return (
     <div className="flex flex-col items-center gap-0.5">

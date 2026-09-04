@@ -1,3 +1,8 @@
+/**
+ * 대시보드 오른쪽 실시간 이벤트 로그 패널.
+ * useRealtimeEvents가 받아 온 이벤트를 최신순으로 보여 주고,
+ * 상단에 스트림 연결 상태(LIVE/연결 중/오프라인/오류)를 표시한다.
+ */
 import { AlertTriangle, CheckCircle, Clock, Loader2, PlugZap, Wifi, Zap } from "lucide-react";
 
 export type EventLogType = "normal" | "warning" | "error" | "info";
@@ -15,6 +20,7 @@ export interface EventLogEntry {
 
 export type RealtimeStatus = "connecting" | "connected" | "disconnected" | "error";
 
+// 이벤트 종류별 아이콘·색상
 const TYPE_CONFIG: Record<EventLogType, { icon: React.ElementType; color: string; bg: string; text: string }> = {
   normal: { icon: CheckCircle, color: "#22C55E", bg: "#F0FDF4", text: "정상" },
   warning: { icon: AlertTriangle, color: "#F59E0B", bg: "#FFFBEB", text: "경고" },
@@ -128,6 +134,7 @@ export function EventLog({ entries, status, error }: EventLogProps) {
   );
 }
 
+// 이벤트가 없거나 연결이 끊겼을 때 보여 주는 안내
 function EmptyState({
   icon: Icon,
   title,

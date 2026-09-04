@@ -1,3 +1,10 @@
+/**
+ * 대시보드 평면도 화면.
+ *
+ * 층별 도면 이미지 위에 소화기 위치를 점으로 찍어 상태별 색으로 보여 주고,
+ * 마우스를 올리면 요약 팝오버, 클릭하면 상세 화면으로 이동한다.
+ * 편집 모드에서는 마커를 끌어 위치를 옮길 수 있고, 좌표는 상위(App)가 서버에 저장한다.
+ */
 import { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronDown, Check, MapPin, Move } from "lucide-react";
 import { normalizeDevice } from "../data/devices";
@@ -8,6 +15,8 @@ import { authHeaders } from "../auth";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
+// 도면은 고정 크기 SVG 좌표계에 그리고, 소화기 좌표는 %로 저장한다
+// (창 크기나 도면 이미지가 바뀌어도 상대 위치가 유지되도록).
 const SVG_W = 720;
 const SVG_H = 460;
 
@@ -95,6 +104,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
     return () => document.removeEventListener("mousedown", handler);
   }, [dropdownOpen]);
 
+  // SVG 좌표 → 화면 픽셀 좌표. 팝오버를 마커 위에 정확히 띄우기 위해 필요.
   const getDeviceScreenPos = (device: Device): { x: number; y: number } | null => {
     const svg = svgRef.current;
     const container = containerRef.current;
@@ -118,6 +128,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
 
   const handleMarkerLeave = () => setPopover(null);
 
+  // 마커 클릭 → 250ms 클릭 효과를 보여 준 뒤 상세 화면으로 이동(편집 모드에선 무시).
   const handleMarkerClick = (device: Device, e: React.MouseEvent) => {
     if (editMode) return;
     e.stopPropagation();
@@ -136,6 +147,8 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
     setDragState({ deviceId: device.id, x: toSvg(device.x_coord, SVG_W), y: toSvg(device.y_coord, SVG_H) });
   };
 
+  // 드래그 중 마우스 좌표를 SVG 좌표로 변환해 마커를 따라오게 한다.
+  // 가장자리(10~710, 10~450)로 제한해 마커가 도면 밖으로 나가지 않도록 한다.
   const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!dragState || !editMode) return;
     e.preventDefault();
@@ -152,6 +165,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
     setDragState((prev) => (prev ? { ...prev, x, y } : null));
   };
 
+  // 드래그 종료 시점에만 좌표를 %로 바꿔 상위로 알린다(끄는 동안은 서버에 저장하지 않음).
   const handleSvgMouseUp = () => {
     if (dragState && onPositionChange) {
       onPositionChange(dragState.deviceId, toPct(dragState.x, SVG_W), toPct(dragState.y, SVG_H));
@@ -159,6 +173,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
     setDragState(null);
   };
 
+  // 끌고 있는 마커는 드래그 좌표를, 나머지는 저장된 좌표를 쓴다.
   const getMarkerPos = (device: Device) => {
     if (dragState && dragState.deviceId === device.id) {
       return { x: dragState.x, y: dragState.y };

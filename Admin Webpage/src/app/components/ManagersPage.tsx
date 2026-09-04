@@ -1,3 +1,9 @@
+/**
+ * 담당자(관리자 계정) 관리 화면.
+ *
+ * 계정 목록을 검색·정렬·페이지로 보여 주고 등록/삭제를 처리한다.
+ * 부여할 수 있는 역할은 로그인한 사용자 자신의 권한까지로 제한된다(permissions.canAssignRole).
+ */
 import { useState, useMemo, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
@@ -26,9 +32,11 @@ interface ManagersPageProps {
 }
 
 export function ManagersPage({ admins, setAdmins, currentUser }: ManagersPageProps) {
+  // 자기보다 높은 권한은 줄 수 없다 — 선택지 자체를 걸러 낸다.
   const assignableRoles = (Object.keys(ROLE_CONFIG) as AdminRole[]).filter((r) => canAssignRole(currentUser.role, r));
   const [floorOptions, setFloorOptions] = useState<{ floor_id: number; floor_name: string }[]>([]);
 
+  // 담당 층 선택지 — 층 목록을 서버에서 받아 둔다.
   useEffect(() => {
     fetch(`${API_BASE}/api/floors/detail`, { headers: authHeaders() })
       .then((r) => r.json())
@@ -99,6 +107,8 @@ export function ManagersPage({ admins, setAdmins, currentUser }: ManagersPagePro
     else setSelected(new Set(pageItems.map((a) => a.admin_id)));
   };
 
+  // 삭제도 두 번 눌러야 실행(오조작 방지). 나보다 높은 권한 계정은 버튼 자체가 막혀 있고,
+  // 최종 권한 검사는 서버가 한다(실패 시 응답 메시지를 그대로 보여 준다).
   const handleDelete = async (id: number) => {
     if (pendingDelete !== id) {
       setPendingDelete(id);
@@ -148,6 +158,7 @@ export function ManagersPage({ admins, setAdmins, currentUser }: ManagersPagePro
     setSelected(new Set());
   };
 
+  // 담당자 등록 — 서버 저장 후 목록에 추가한다.
   const handleSubmit = async (ev: React.FormEvent<HTMLFormElement>) => {
     ev.preventDefault();
     if (!form.name.trim() || !form.email.trim() || !form.password || !form.phone.trim()) {

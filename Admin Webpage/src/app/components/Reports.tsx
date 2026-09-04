@@ -1,3 +1,11 @@
+/**
+ * 보고서 화면.
+ *
+ * 소화기 목록과 알림을 집계해 KPI(총 대수·이상 건수·점검률 등), 상태 분포,
+ * 층·구역별 현황, 유효기간 임박 목록, 유지보수 추이를 차트와 표로 보여 준다.
+ * 서버에 따로 요청하지 않고 상위(App)가 들고 있는 데이터를 계산해 쓰며,
+ * CSV 또는 인쇄용 PDF로 내보낼 수 있다.
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ElementType } from "react";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -38,6 +46,7 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 };
 
+// PDF 출력은 HTML 문자열을 만들어 인쇄창에 넘기므로, 값에 든 태그 문자를 반드시 이스케이프한다.
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPE_MAP[c]);
 }
@@ -63,6 +72,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
+  // 설정 화면에서 저장한 층 구성·점검 주기를 그대로 가져와 집계 기준으로 쓴다.
   const [floorConfigs] = usePersistentState<FloorConfig[]>("firewatch.settings.floors.saved", DEFAULT_FLOORS);
   const [savedSettings] = usePersistentState<{ inspectionCycle?: string }>("firewatch.settings.saved", { inspectionCycle: "30" });
   const inspectionCycle = Math.max(1, parseInt(savedSettings.inspectionCycle ?? "30", 10) || 30);
@@ -88,6 +98,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  // 상태별 소화기 수(도넛 차트용). 정의에 없는 상태가 와도 회색으로 표시한다.
   const statusData = useMemo(() => {
     const counts = new Map<string, number>();
     devices.forEach((d) => { counts.set(d.status, (counts.get(d.status) ?? 0) + 1); });
@@ -101,6 +112,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
     }));
   }, [devices]);
 
+  // 층별 총 대수와 정상 비율. 설정에 등록된 층은 소화기가 0대여도 표에 남긴다.
   const floorStats = useMemo(() => {
     const map = new Map<string, { total: number; normal: number; level: number }>();
     floorConfigs.forEach((f, i) => {
@@ -119,6 +131,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
       .sort((a, b) => a.level - b.level);
   }, [devices, floorConfigs]);
 
+  // 유효기간이 임박한 순으로 최대 12대(남은 일수는 음수면 이미 만료).
   const expiryList = useMemo(() => [...devices]
     .map((d) => ({ ...d, daysLeft: Math.ceil((new Date(d.expiry_date).getTime() - today.getTime()) / 86400000) }))
     .sort((a, b) => a.daysLeft - b.daysLeft)
@@ -137,6 +150,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
       .slice(0, 20),
   [devices]);
 
+  // 최근 6개월 유지보수 건수 추이(막대 차트용)
   const monthlyTrend = useMemo(() => {
     const allLogs = devices.flatMap((d) => d.maintenance_logs);
     return Array.from({ length: 6 }, (_, i) => {
@@ -148,6 +162,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
     });
   }, [devices, today]);
 
+  // 점검률 — 설정된 점검 주기(일) 안에 유지보수 이력이 한 번이라도 있는 소화기의 비율.
   const inspectionRate = useMemo(() => {
     const cutoff = new Date(today.getTime() - inspectionCycle * 86400000);
     const inspected = new Set(
@@ -160,6 +175,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
     return { completed: inspected.size, total: devices.length, rate };
   }, [devices, today, inspectionCycle]);
 
+  // 구역별 총 대수와 이상 대수(정상이 아닌 상태를 이상으로 센다)
   const zoneStats = useMemo(() => {
     const map = new Map<number, { zone_id: number; zone_name: string; floor_name: string; total: number; issues: number }>();
     devices.forEach((d) => {
@@ -179,6 +195,7 @@ export function Reports({ devices, alerts = [], onNavigate }: ReportsProps) {
     setExportOpen(false);
   };
 
+  // PDF 내보내기 — 인쇄용 HTML을 새 창에 띄워 브라우저 인쇄(PDF로 저장) 기능을 쓴다.
   const handleExportPdf = () => {
     setExportOpen(false);
 

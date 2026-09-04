@@ -1,3 +1,4 @@
+// 텍스트 내용을 파일로 내려받게 한다(보고서 CSV 내보내기 등).
 export function downloadTextFile(filename: string, content: string, mimeType = "text/plain;charset=utf-8") {
   // Prepend UTF-8 BOM for CSV so Excel/Windows correctly reads Korean characters
   const prefix = mimeType.includes("csv") ? "﻿" : "";
@@ -12,6 +13,7 @@ export function downloadTextFile(filename: string, content: string, mimeType = "
   URL.revokeObjectURL(url);
 }
 
+// 객체 배열 → CSV 문자열. 첫 행의 키를 헤더로 쓰고, 쉼표·따옴표·줄바꿈은 이스케이프한다.
 export function toCsv(rows: Array<Record<string, string | number | boolean | null | undefined>>) {
   if (rows.length === 0) return "";
   const headers = Object.keys(rows[0]);

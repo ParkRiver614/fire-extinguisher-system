@@ -1,3 +1,10 @@
+/**
+ * localStorage에 값을 저장하는 useState.
+ *
+ * 새로고침해도 값이 남고, 같은 키를 쓰는 다른 컴포넌트/다른 탭과도 값이 동기화된다
+ * (같은 탭은 커스텀 이벤트, 다른 탭은 브라우저 storage 이벤트로 알림).
+ * 시크릿 모드처럼 저장이 막힌 브라우저에서도 화면은 그대로 동작하도록 저장 오류는 무시한다.
+ */
 import { useCallback, useEffect, useState } from "react";
 
 const PERSISTENT_STATE_EVENT = "firewatch:persistent-state";
@@ -14,6 +21,7 @@ export function usePersistentState<T>(key: string, initialValue: T) {
     }
   });
 
+  // 저장 + 같은 탭의 다른 구독자에게 알림(브라우저 storage 이벤트는 다른 탭에만 오므로).
   const writeValue = useCallback((nextValue: T) => {
     try {
       window.localStorage.setItem(key, JSON.stringify(nextValue));

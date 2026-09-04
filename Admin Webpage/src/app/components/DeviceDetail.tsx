@@ -1,3 +1,10 @@
+/**
+ * 소화기 상세 화면.
+ *
+ * 최신 스냅샷 사진과 센서값(가스·온습도·무게·신호), 상태, 위치, 유지보수 이력,
+ * 이 소화기에서 발생한 알림을 한 화면에 모아 보여 준다.
+ * 유지보수 시작/완료와 이력 수정·삭제는 서버에 반영한 뒤 상위(App)의 목록 상태도 함께 갱신한다.
+ */
 import { useState } from "react";
 import { authHeaders } from "../auth";
 
@@ -75,6 +82,7 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
   const signalReading  = device.sensor_readings.find((r) => r.sensor_type_name === "신호강도");
   const lastMaintenance = device.maintenance_logs[device.maintenance_logs.length - 1];
 
+  // 이 소화기만 다시 조회해 최신 상태로 갱신. 실패해도 기존 화면은 그대로 둔다.
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -94,6 +102,7 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
     }
   };
 
+  // 유지보수 버튼: 진행 중이면 완료 모달을 열고, 아니면 상태를 "유지보수"로 바꾼다.
   const handleMaintenance = async () => {
     if (isMaintenance) {
       setCompleteNote("");
@@ -115,6 +124,8 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
     }
   };
 
+  // 유지보수 완료 — 이력 기록과 상태 복구(normal)를 함께 요청하고, 화면에도 새 이력을 붙인다.
+  // 서버가 돌려준 이력이 있으면 그것으로 교체(진짜 ID·시각을 쓰기 위해).
   const handleCompleteConfirm = async () => {
     if (!onUpdateDevice) return;
     const actionTaken = completeNote.trim() || "유지보수 완료";
@@ -156,6 +167,7 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
     setEditingText(currentText);
   };
 
+  // 유지보수 이력 수정 저장(내용을 비우면 기존 내용 유지)
   const handleEditSave = async (logId: number) => {
     if (!onUpdateDevice) return;
     const current = device.maintenance_logs.find((l) => l.maintenance_id === logId);
@@ -191,6 +203,7 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
     });
   };
 
+  // 이 소화기의 현재 상태를 텍스트 보고서로 내려받는다.
   const handleDownloadReport = () => {
     downloadTextFile(
       `${device.id}-report.txt`,
@@ -615,6 +628,7 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
   );
 }
 
+// 센서값 카드 하나(아이콘 + 수치 + 임계 범위)
 function MetricCard({
   icon: Icon, iconColor, iconBg, label, en, value, valueColor = "#1E293B", bar, barColor,
 }: {

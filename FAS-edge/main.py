@@ -1,3 +1,11 @@
+"""엣지 메인 루프 — 소화기 상태를 판단해 서버로 올리는 진입점.
+
+두 갈래로 돈다.
+  1) 주기 루프: 서버가 알려준 간격마다 촬영 → 비전 판단 → 스냅샷/상태 업로드
+  2) 리더 스레드: ESP32 무게값을 실시간 감시하다 이탈/거치가 확정되면 즉시 업로드
+동시에 관리자 비상 명령(LED/부저)을 받는 HTTP 서버도 스레드로 띄운다.
+"""
+
 import threading
 import time
 import requests
@@ -16,6 +24,7 @@ _last_vision_status = "normal"
 
 
 def get_interval_minutes() -> int:
+    """관리자가 웹에서 설정한 비전 추론 주기(분)를 서버에서 받아온다. 실패 시 30분."""
     try:
         resp = requests.get(f"{API_BASE}/api/sensors/vision-interval", headers=HEADERS, timeout=5)
         resp.raise_for_status()
@@ -26,6 +35,7 @@ def get_interval_minutes() -> int:
 
 
 def upload_snapshot(jpg_path: str) -> str | None:
+    """촬영본을 서버에 올리고 저장된 URL을 돌려준다(상세 화면의 최신 사진용)."""
     try:
         with open(jpg_path, "rb") as f:
             resp = requests.post(
@@ -43,6 +53,7 @@ def upload_snapshot(jpg_path: str) -> str | None:
 
 
 def send_update(status: str, snapshot_url: str | None, vision_info: dict | None, sensor_readings: list[dict]):
+    """상태 + 센서값(+스냅샷/비전 결과)을 한 번에 서버로 전송. 이벤트 기록 여부는 서버가 판단."""
     payload = {
         "mac_address": MAC,
         "status": status,
@@ -78,6 +89,7 @@ def on_missing_change(missing: bool, readings: list[dict]) -> None:
 
 
 def run_once():
+    """주기 1회분: 촬영·비전 판단 → 센서값 수집 → 최종 상태 결정 → 서버 전송."""
     global _last_vision_status
     try:
         vision_status, jpg_path, vision_info = run_cycle()
@@ -106,6 +118,7 @@ def run_once():
 
 
 def main_loop():
+    """리더 스레드와 비상 명령 서버를 띄우고, 설정된 주기로 run_once()를 반복한다."""
     # 시리얼 포트(/dev/ttyUSB0)는 배타적이라 이 프로세스가 하나만 쥔다.
     # 무게는 리더 스레드가 실시간으로 보고, 비상 명령도 같은 연결로 나간다.
     sensors_esp32.start_reader(on_missing_change)
