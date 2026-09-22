@@ -15,10 +15,13 @@ import { authHeaders } from "../auth";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
-// 도면은 고정 크기 SVG 좌표계에 그리고, 소화기 좌표는 %로 저장한다
+// 도면은 SVG 좌표계에 그리고, 소화기 좌표는 %로 저장한다
 // (창 크기나 도면 이미지가 바뀌어도 상대 위치가 유지되도록).
+// 세로 크기는 층마다 다른 도면 이미지의 실제 비율(imageRatio = height/width)에 맞춰 계산한다 —
+// 모든 층에 720x460을 고정으로 쓰면 원본 비율과 안 맞는 도면(세로로 긴 사진 등)에서
+// 이미지가 레터박스로 줄어들면서 마커 좌표(전체 캔버스 기준 %)와 어긋난다.
 const SVG_W = 720;
-const SVG_H = 460;
+const DEFAULT_SVG_H = 460;
 
 const toSvg = (pct: number, dim: number) => pct / 100 * dim;
 const toPct = (px: number, dim: number) => parseFloat((px / dim * 100).toFixed(2));
@@ -84,6 +87,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
           label: (f.floor_label as string) || (f.floor_name as string),
           zones: ((f.zones as Record<string, unknown>[]) ?? []).map((z) => z.zone_name as string).join(", "),
           mapFileName: (f.image_key as string) || "",
+          imageRatio: typeof f.image_ratio === "number" && f.image_ratio > 0 ? f.image_ratio : undefined,
         })));
       })
       .catch(() => {});
@@ -91,6 +95,11 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
 
   const FLOORS = floorConfigs.length > 0 ? floorConfigs : DEFAULT_FLOORS;
   const mapFileData = floorMaps[floor] || "";
+
+  // 현재 층 도면의 실제 비율(height/width)에 맞춰 SVG 세로 크기를 계산한다.
+  // 비율 정보가 없는 층은 기존 기본값(460)을 그대로 쓴다.
+  const currentFloorRatio = FLOORS.find((f) => f.key === floor)?.imageRatio;
+  const SVG_H = currentFloorRatio && currentFloorRatio > 0 ? Math.round(SVG_W * currentFloorRatio) : DEFAULT_SVG_H;
 
   const devices = useMemo(
     () => allDevices.map(normalizeDevice).filter((device) => device.floor_name === floor),
@@ -148,7 +157,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
   };
 
   // 드래그 중 마우스 좌표를 SVG 좌표로 변환해 마커를 따라오게 한다.
-  // 가장자리(10~710, 10~450)로 제한해 마커가 도면 밖으로 나가지 않도록 한다.
+  // 가장자리(10~SVG_W-10, 10~SVG_H-10)로 제한해 마커가 도면 밖으로 나가지 않도록 한다.
   const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!dragState || !editMode) return;
     e.preventDefault();
@@ -160,8 +169,8 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
     pt.x = e.clientX;
     pt.y = e.clientY;
     const svgPt = pt.matrixTransform(ctm.inverse());
-    const x = Math.round(Math.max(10, Math.min(710, svgPt.x)));
-    const y = Math.round(Math.max(10, Math.min(450, svgPt.y)));
+    const x = Math.round(Math.max(10, Math.min(SVG_W - 10, svgPt.x)));
+    const y = Math.round(Math.max(10, Math.min(SVG_H - 10, svgPt.y)));
     setDragState((prev) => (prev ? { ...prev, x, y } : null));
   };
 
@@ -241,7 +250,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
       {/* Floor Plan SVG */}
       <svg
         ref={svgRef}
-        viewBox="0 0 720 460"
+        viewBox={`0 0 ${SVG_W} ${SVG_H}`}
         className="absolute inset-0 w-full h-full"
         style={{ padding: "0", cursor: dragState ? "grabbing" : "default" }}
         preserveAspectRatio="xMidYMid meet"
@@ -259,14 +268,16 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
         </defs>
 
         {mapFileData ? (
-          <image href={mapFileData} x="0" y="0" width="720" height="460" preserveAspectRatio="xMidYMid meet" />
+          // SVG_W/SVG_H가 이미 이 층 도면의 실제 비율로 계산되어 있으므로,
+          // 이미지가 그 영역을 정확히 채워도(레터박스 없이) 왜곡되지 않는다.
+          <image href={mapFileData} x="0" y="0" width={SVG_W} height={SVG_H} preserveAspectRatio="none" />
         ) : (
           <>
-            <rect x="0" y="0" width="720" height="460" fill="#F8FAFC" />
-            <text x="360" y="220" textAnchor="middle" style={{ fontSize: "13px", fill: "#64748B", fontFamily: "sans-serif", fontWeight: 600 }}>
+            <rect x="0" y="0" width={SVG_W} height={SVG_H} fill="#F8FAFC" />
+            <text x={SVG_W / 2} y={SVG_H / 2 - 10} textAnchor="middle" style={{ fontSize: "13px", fill: "#64748B", fontFamily: "sans-serif", fontWeight: 600 }}>
               도면이 등록되지 않았습니다
             </text>
-            <text x="360" y="242" textAnchor="middle" style={{ fontSize: "10px", fill: "#94A3B8", fontFamily: "sans-serif" }}>
+            <text x={SVG_W / 2} y={SVG_H / 2 + 12} textAnchor="middle" style={{ fontSize: "10px", fill: "#94A3B8", fontFamily: "sans-serif" }}>
               설정 → 층·구역 관리에서 도면을 업로드하세요
             </text>
           </>
@@ -353,7 +364,7 @@ export function FloorMap({ devices: allDevices, onSelectDevice, onPositionChange
         const containerW = containerRef.current?.clientWidth ?? 800;
         const popW = 200;
         const popH = 170;
-        const gap = MARKER_R * (containerH / 460) + 8;
+        const gap = MARKER_R * (containerH / SVG_H) + 8;
 
         let left = popover.x - popW / 2;
         let top = popover.y - popH - gap;

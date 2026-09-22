@@ -1,0 +1,65 @@
+services:
+  db:
+    image: mariadb:10.11
+    container_name: capstone_mariadb
+    restart: unless-stopped
+    networks:
+      - server-stack_default
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: FAS
+      MARIADB_USER: fire_user
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+    volumes:
+      - maria_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  FASapi:
+    image: fasapi:latest
+    build:
+      context: ./api
+    container_name: fas_api
+    restart: unless-stopped
+    networks:
+      - server-stack_default
+    volumes:
+      - ./api/uploads:/app/uploads
+    environment:
+      DB_HOST: capstone_mariadb
+      DB_PORT: 3306
+      DB_USER: fire_user
+      DB_PASSWORD: ${MARIADB_PASSWORD}
+      DB_NAME: FAS
+      SECRET_KEY: ${SECRET_KEY}
+      DEVICE_API_KEY: ${DEVICE_API_KEY}
+      PUBLIC_BASE_URL: ${API_BASE_URL}
+      CORS_ALLOW_ORIGINS: ${FRONT_ORIGIN}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  FASFront:
+    image: fasfront:latest
+    build:
+      context: ./FASFront
+      args:
+        VITE_API_BASE_URL: ${API_BASE_URL}
+        VITE_USE_MOCK_AUTH: "false"
+    container_name: fas_front
+    restart: unless-stopped
+    ports:
+      - "8006:80"
+    depends_on:
+      - FASapi
+
+networks:
+  server-stack_default:
+
+volumes:
+  maria_data:

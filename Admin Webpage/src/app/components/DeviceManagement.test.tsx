@@ -337,6 +337,39 @@ describe("DeviceManagement", () => {
     expect(setDevices).toHaveBeenCalled();
   });
 
+  it("locks zone and admin until a floor is chosen, then offers only that floor's admins", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url.includes("/api/floors/detail")) {
+          return jsonResponse([
+            { floor_id: 1, floor_name: "1F", floor_label: "1층", level: 1, zones: [{ zone_id: 1, zone_name: "로비" }] },
+            { floor_id: 2, floor_name: "2F", floor_label: "2층", level: 2, zones: [{ zone_id: 2, zone_name: "복도" }] },
+          ]);
+        }
+        if (url.includes("/api/devices/models")) return jsonResponse([]);
+        return jsonResponse({});
+      }),
+    );
+    const admins: Admin[] = [
+      { admin_id: 1, admin_name: "김일층", email: "a@example.com", role: "operator", assigned_floor_id: 1, created_at: "2026-01-01" },
+      { admin_id: 2, admin_name: "박이층", email: "b@example.com", role: "operator", assigned_floor_id: 2, created_at: "2026-01-01" },
+    ];
+    const user = userEvent.setup();
+    renderDeviceManagement([], admins);
+    await screen.findByText("등록된 장치가 없습니다");
+
+    const [zoneSelect, adminSelect] = screen.getAllByDisplayValue("층을 먼저 선택하세요");
+    expect(zoneSelect).toBeDisabled();
+    expect(adminSelect).toBeDisabled();
+
+    await user.selectOptions(await screen.findByDisplayValue("층 선택…"), "2층");
+    expect(screen.getByDisplayValue("구역 선택…")).toBeEnabled();
+    const admin = screen.getByDisplayValue("담당자 미지정");
+    expect(within(admin).getByText("박이층")).toBeInTheDocument();
+    expect(within(admin).queryByText("김일층")).not.toBeInTheDocument();
+  });
+
   it("requires a valid, unique MAC address when registering a new device", async () => {
     const user = userEvent.setup();
     renderDeviceManagement([makeDevice({ id: "FE-101", mac_address: "AA:BB:CC:DD:EE:FF" })]);

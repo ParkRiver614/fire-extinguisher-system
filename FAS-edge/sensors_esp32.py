@@ -5,6 +5,7 @@
 비상 명령(LED/부저)도 같은 연결로 나간다.
 """
 
+import os
 import threading
 import time
 from typing import Callable
@@ -15,6 +16,7 @@ from config import (
     ESP32_SERIAL_PORT, ESP32_BAUD_RATE, ESP32_SERIAL_TIMEOUT,
     ESP32_BOOT_WAIT_SECONDS, ESP32_RECONNECT_SECONDS,
     MISSING_WEIGHT_THRESHOLD, MISSING_DEBOUNCE_SECONDS, SENSOR_STALE_SECONDS,
+    FIRE_GAS_THRESHOLD, FIRE_DEBOUNCE_SECONDS,
 )
 
 # ESP32 → Pi 프로토콜: 한 줄 텍스트, 콤마로 구분된 KEY:VALUE
@@ -34,6 +36,9 @@ _ser: serial.Serial | None = None
 _latest: list[dict] = []
 _latest_at: float = 0.0
 _reader_started = False
+
+# 시리얼 모니터 모드: 받은 줄을 그대로 로그에 흘린다 (journalctl -fu fas-edge 로 관찰)
+SERIAL_MONITOR = os.environ.get("FAS_SERIAL_MONITOR") == "1"
 
 
 def _parse_line(line: str) -> list[dict]:
@@ -60,9 +65,19 @@ def is_missing(readings: list[dict]) -> bool:
     return weight < MISSING_WEIGHT_THRESHOLD
 
 
-class MissingDebouncer:
-    """로드셀 값은 임계값 근처에서 흔들리므로, 바뀐 상태가 debounce_seconds 동안
-    계속 유지될 때만 확정한다. update()는 '지금 서버에 알려야 하면' True를 돌려준다."""
+def is_fire(readings: list[dict]) -> bool:
+    """센서 읽기 목록에서 가스 값을 찾아 임계값을 넘으면 화재(True)로 판단.
+    가스 값이 없으면(ESP32 미연결 등) 판단 불가 상태이므로 False."""
+    gas = next((r["value"] for r in readings if r["sensor_type_name"] == "가스"), None)
+    if gas is None:
+        return False
+    return gas > FIRE_GAS_THRESHOLD
+
+
+class StateDebouncer:
+    """센서 값은 임계값 근처에서 흔들리므로, 바뀐 상태가 debounce_seconds 동안
+    계속 유지될 때만 확정한다. update()는 '지금 서버에 알려야 하면' True를 돌려준다.
+    이탈(무게)과 화재(가스) 양쪽에 같은 규칙으로 쓴다."""
 
     def __init__(self, debounce_seconds: float = MISSING_DEBOUNCE_SECONDS):
         self.debounce = debounce_seconds
@@ -70,21 +85,21 @@ class MissingDebouncer:
         self._candidate: bool | None = None
         self._since = 0.0
 
-    def update(self, missing: bool, now: float) -> bool:
-        if missing == self.confirmed:
+    def update(self, state: bool, now: float) -> bool:
+        if state == self.confirmed:
             self._candidate = None          # 흔들렸다가 원래 상태로 복귀 — 관찰 취소
             return False
-        if missing != self._candidate:
-            self._candidate, self._since = missing, now
+        if state != self._candidate:
+            self._candidate, self._since = state, now
             return False
         if now - self._since < self.debounce:
             return False
 
         first = self.confirmed is None
-        self.confirmed, self._candidate = missing, None
-        # 기동 직후 첫 판단이 '거치'면 기준선만 잡는다 — 켤 때마다 이벤트가 생기지 않도록.
-        # 반대로 첫 판단이 '이탈'이면 알린다: 부팅 시점에 이미 없어진 경우를 놓치면 안 된다.
-        return missing or not first
+        self.confirmed, self._candidate = state, None
+        # 기동 직후 첫 판단이 평상 상태면 기준선만 잡는다 — 켤 때마다 이벤트가 생기지 않도록.
+        # 반대로 이상 상태(이탈/화재)면 알린다: 부팅 시점에 이미 발생한 경우를 놓치면 안 된다.
+        return state or not first
 
 
 def get_esp32_readings() -> list[dict]:
@@ -109,14 +124,20 @@ def send_command(cmd: str) -> bool:
             return False
 
 
-def start_reader(on_missing_change: Callable[[bool, list[dict]], None] | None = None) -> None:
+def start_reader(
+    on_missing_change: Callable[[bool, list[dict]], None] | None = None,
+    on_fire_change: Callable[[bool, list[dict]], None] | None = None,
+) -> None:
     """ESP32 시리얼을 열어 계속 읽는 백그라운드 스레드를 띄운다.
-    무게 기반 이탈/거치 상태가 확정적으로 바뀌면 on_missing_change(missing, readings)를 부른다."""
+    무게 기반 이탈/거치, 가스 기반 화재/평상 상태가 확정적으로 바뀔 때마다
+    해당 콜백을 (state, readings)로 부른다."""
     global _reader_started
     if _reader_started:
         return
     _reader_started = True
-    threading.Thread(target=_reader_loop, args=(on_missing_change,), daemon=True).start()
+    threading.Thread(
+        target=_reader_loop, args=(on_missing_change, on_fire_change), daemon=True
+    ).start()
 
 
 def _open_port() -> bool:
@@ -145,9 +166,14 @@ def _close_port() -> None:
             _ser = None
 
 
-def _reader_loop(on_missing_change: Callable[[bool, list[dict]], None] | None) -> None:
+def _reader_loop(
+    on_missing_change: Callable[[bool, list[dict]], None] | None,
+    on_fire_change: Callable[[bool, list[dict]], None] | None,
+) -> None:
     global _latest, _latest_at
-    debouncer = MissingDebouncer()
+    missing_debouncer = StateDebouncer(MISSING_DEBOUNCE_SECONDS)
+    fire_debouncer = StateDebouncer(FIRE_DEBOUNCE_SECONDS)
+    last_ok = time.monotonic()   # 마지막으로 파싱에 성공한 시각
 
     while True:
         if _ser is None or not _ser.is_open:
@@ -164,15 +190,33 @@ def _reader_loop(on_missing_change: Callable[[bool, list[dict]], None] | None) -
 
         readings = _parse_line(line) if line else []
         if not readings:
+            # readline()은 타임아웃돼도 예외 없이 빈 값을 돌려준다. USB가 빠지거나 절전에서
+            # 깨어나 연결이 죽으면 예외가 안 나므로, 위의 except로는 영영 못 잡고 조용히 굶는다.
+            # 무응답이 길어지면 포트를 직접 닫아 재연결 경로를 타게 한다.
+            if time.monotonic() - last_ok > SENSOR_STALE_SECONDS:
+                print("[ESP32 무응답, 재연결 시도]")
+                _close_port()
+                last_ok = time.monotonic()
             continue
-        _latest, _latest_at = readings, time.monotonic()
 
-        if not debouncer.update(is_missing(readings), time.monotonic()):
-            continue
+        last_ok = time.monotonic()
+        _latest, _latest_at = readings, last_ok
+        if SERIAL_MONITOR:
+            print(f"[센서] {line}", flush=True)
 
-        print(f"[이탈 상태 변경] {'이탈' if debouncer.confirmed else '거치'}")
-        if on_missing_change:
-            try:
-                on_missing_change(bool(debouncer.confirmed), readings)
-            except Exception as e:
-                print(f"[이탈 즉시 전송 실패] {e}")
+        # 화재를 먼저 본다 — 둘 다 바뀌는 순간엔 화재가 우선순위가 높다
+        if fire_debouncer.update(is_fire(readings), last_ok):
+            print(f"[화재 상태 변경] {'화재 감지' if fire_debouncer.confirmed else '평상'}")
+            if on_fire_change:
+                try:
+                    on_fire_change(bool(fire_debouncer.confirmed), readings)
+                except Exception as e:
+                    print(f"[화재 즉시 전송 실패] {e}")
+
+        if missing_debouncer.update(is_missing(readings), last_ok):
+            print(f"[이탈 상태 변경] {'이탈' if missing_debouncer.confirmed else '거치'}")
+            if on_missing_change:
+                try:
+                    on_missing_change(bool(missing_debouncer.confirmed), readings)
+                except Exception as e:
+                    print(f"[이탈 즉시 전송 실패] {e}")

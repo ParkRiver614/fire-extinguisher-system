@@ -40,7 +40,9 @@ interface DeviceDetailProps {
 
 export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDetailProps) {
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
+  // 실제로 이 장치를 다시 받아온 시각만 담는다. 마운트 시각으로 초기화하면
+  // 옛 데이터 옆에 방금 시각이 찍혀서 "최신인데 값이 틀린" 것처럼 보인다.
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [maintenanceScheduled, setMaintenanceScheduled] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeNote, setCompleteNote] = useState("");
@@ -93,11 +95,11 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
       if (res.ok) {
         const fresh: ExtinguisherView = await res.json();
         onUpdateDevice?.(fresh);
+        setLastUpdated(new Date());
       }
     } catch {
       // 네트워크 오류 시 기존 화면 유지
     } finally {
-      setLastUpdated(new Date());
       setRefreshing(false);
     }
   };
@@ -375,14 +377,14 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
             <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.5)", fontFamily: "monospace" }}>
               {device.latest_vision?.created_at
                 ? `촬영: ${parseServerDate(device.latest_vision.created_at).toLocaleString("ko-KR")}`
-                : lastUpdated.toLocaleString("ko-KR")}
+                : "촬영 시각 없음"}
             </span>
           </div>
         </div>
 
         <div className="bg-blue-50 rounded-xl border border-blue-100 px-4 py-3 flex items-center justify-between">
           <span className="text-blue-700" style={{ fontSize: "11px", fontWeight: 600 }}>마지막 새로고침</span>
-          <span className="text-blue-500" style={{ fontSize: "11px", fontFamily: "monospace" }}>{lastUpdated.toLocaleTimeString("ko-KR")}</span>
+          <span className="text-blue-500" style={{ fontSize: "11px", fontFamily: "monospace" }}>{lastUpdated ? lastUpdated.toLocaleTimeString("ko-KR") : "—"}</span>
         </div>
 
         {/* Maintenance log */}
@@ -573,9 +575,9 @@ export function DeviceDetail({ device, onUpdateDevice, alerts = [] }: DeviceDeta
           <MetricCard
             icon={Battery} iconColor="#22C55E" iconBg="#F0FDF4"
             label="배터리" en="Battery"
-            value={`${device.battery_level}%`}
-            bar={device.battery_level / 100}
-            barColor={device.battery_level < 20 ? "#EF4444" : "#22C55E"}
+            value={device.battery_level != null ? `${device.battery_level}%` : "—"}
+            bar={(device.battery_level ?? 0) / 100}
+            barColor={(device.battery_level ?? 100) < 20 ? "#EF4444" : "#22C55E"}
           />
           <MetricCard
             icon={Wifi} iconColor="#F59E0B" iconBg="#FFFBEB"

@@ -147,6 +147,14 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
     [form.floor_id, zoneOptions]
   );
 
+  // 담당자는 선택한 층에 배정된 사람만 고를 수 있다. 수정 중인 장치의 기존 담당자는 층이 달라도 남겨 둔다.
+  const filteredAdmins = useMemo(
+    () => form.floor_id
+      ? admins.filter((a) => a.assigned_floor_id === parseInt(form.floor_id) || String(a.admin_id) === form.admin_id)
+      : [],
+    [form.floor_id, form.admin_id, admins]
+  );
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return devices.filter((d) => {
@@ -428,7 +436,7 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
 
   const updateField = (key: keyof typeof form, val: string) => {
     if (key === "floor_id") {
-      setForm((f) => ({ ...f, floor_id: val, zone_id: "" }));
+      setForm((f) => ({ ...f, floor_id: val, zone_id: "", admin_id: "" }));
     } else {
       setForm((f) => ({ ...f, [key]: val }));
     }
@@ -1017,8 +1025,9 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
                 value={form.zone_id}
                 onChange={(v) => updateField("zone_id", v)}
                 hasError={!!errors.zone_id}
+                disabled={!form.floor_id}
               >
-                <option value="" disabled>구역 선택…</option>
+                <option value="" disabled>{form.floor_id ? "구역 선택…" : "층을 먼저 선택하세요"}</option>
                 {filteredZones.map((z) => <option key={z.zone_id} value={String(z.zone_id)}>{z.zone_name}</option>)}
               </SelectInput>
             </FormField>
@@ -1064,9 +1073,9 @@ export function DeviceManagement({ devices, setDevices, admins, setAdmins, exter
 
             {/* Admin */}
             <FormField label="담당자" en="Admin (선택)">
-              <SelectInput value={form.admin_id} onChange={(v) => updateField("admin_id", v)} hasError={false}>
-                <option value="">담당자 미지정</option>
-                {admins.map((a) => (
+              <SelectInput value={form.admin_id} onChange={(v) => updateField("admin_id", v)} hasError={false} disabled={!form.floor_id}>
+                <option value="">{form.floor_id ? (filteredAdmins.length === 0 ? "해당 층 담당자 없음" : "담당자 미지정") : "층을 먼저 선택하세요"}</option>
+                {filteredAdmins.map((a) => (
                   <option key={a.admin_id} value={String(a.admin_id)}>{a.admin_name}{a.phone_number ? ` (${a.phone_number})` : ""}</option>
                 ))}
               </SelectInput>
@@ -1126,21 +1135,28 @@ function FormField({ label, en, required, error, children }: { label: string; en
   );
 }
 
-function SelectInput({ value, onChange, hasError, children }: { value: string; onChange: (v: string) => void; hasError: boolean; children: React.ReactNode }) {
+function SelectInput({ value, onChange, hasError, disabled, children }: { value: string; onChange: (v: string) => void; hasError: boolean; disabled?: boolean; children: React.ReactNode }) {
   return (
     <div className="relative">
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3.5 py-2.5 rounded-xl outline-none appearance-none transition-all cursor-pointer"
-        style={{ fontSize: "12px", border: `1.5px solid ${hasError ? "#FCA5A5" : "#E2E8F0"}`, background: hasError ? "#FFF5F5" : "#FAFBFC", color: value ? "#334155" : "#94A3B8" }}
-        onFocus={(e) => { if (!hasError) e.target.style.borderColor = "#93C5FD"; e.target.style.background = "white"; }}
+        disabled={disabled}
+        className="w-full px-3.5 py-2.5 rounded-xl outline-none appearance-none transition-all"
+        style={{
+          fontSize: "12px",
+          border: `1.5px solid ${hasError ? "#FCA5A5" : "#E2E8F0"}`,
+          background: disabled ? "#F1F5F9" : hasError ? "#FFF5F5" : "#FAFBFC",
+          color: disabled ? "#CBD5E1" : value ? "#334155" : "#94A3B8",
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+        onFocus={(e) => { if (!hasError && !disabled) e.target.style.borderColor = "#93C5FD"; if (!disabled) e.target.style.background = "white"; }}
         onBlur={(e) => { if (!hasError) e.target.style.borderColor = "#E2E8F0"; }}
       >
         {children}
       </select>
       <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-        <ChevronDown size={13} style={{ color: "#94A3B8" }} />
+        <ChevronDown size={13} style={{ color: disabled ? "#CBD5E1" : "#94A3B8" }} />
       </div>
     </div>
   );

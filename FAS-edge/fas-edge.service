@@ -9,7 +9,9 @@ Wants=network-online.target
 
 [Service]
 Environment=PYTHONUNBUFFERED=1
-# API 주소/디바이스 키는 여기서 주입 (git에 올리지 않음)
+# API 주소/디바이스 키는 여기서 주입 (git에 올리지 않음).
+# '-'를 안 붙였으므로 .env가 없으면 서비스가 기동에 실패한다 —
+# 조용히 localhost 기본값으로 떨어져 전송이 전부 실패하는 것보다 낫다.
 EnvironmentFile=/home/min/FAS-edge/.env
 Type=simple
 User=min

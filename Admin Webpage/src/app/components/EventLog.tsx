@@ -16,6 +16,7 @@ export interface EventLogEntry {
   timestamp?: string;
   extinguisherId?: number;
   deviceStatus?: string;
+  deviceStatusName?: string;
 }
 
 export type RealtimeStatus = "connecting" | "connected" | "disconnected" | "error";

@@ -247,10 +247,13 @@ function normalizeEvent(value: unknown): EventLogEntry | null {
     type: normalizeEventType(value.type ?? value.level ?? value.severity),
     text: toString(value.text ?? value.message ?? value.title),
     sub: toString(value.sub ?? value.detail ?? value.description),
-    time: toString(value.time) || formatTime(date),
+    // 서버의 `time`은 UTC를 그대로 strftime한 문자열이라 9시간 어긋난다 — 쓰지 않고
+    // created_at/timestamp를 parseServerDate로 변환한 값에서 직접 포맷한다.
+    time: formatTime(date),
     timestamp: createdAt || date.toISOString(),
     extinguisherId: typeof value.extinguisher_id === "number" ? value.extinguisher_id : undefined,
     deviceStatus: toString(value.status) || undefined,
+    deviceStatusName: toString(value.status_name) || undefined,
   };
 }
 

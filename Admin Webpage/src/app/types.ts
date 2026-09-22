@@ -19,7 +19,6 @@ export interface Floor {
   floor_label?: string;
   image_key?: string;
   image_ratio?: number;
-  hydrant_positions?: unknown;
 }
 
 export interface Zone {

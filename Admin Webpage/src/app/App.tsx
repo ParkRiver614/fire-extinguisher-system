@@ -96,8 +96,16 @@ export default function App() {
   useEffect(() => {
     const latest = realtime.events[0];
     if (!latest || latest.extinguisherId == null || !latest.deviceStatus) return;
-    setDevices((prev) =>
-      prev.map((d) => (d.extinguisher_id === latest.extinguisherId ? { ...d, status: latest.deviceStatus! } : d)),
+    // status만 갈아끼우면 색은 바뀌는데 상세 헤더가 읽는 status_name이 옛 값으로 남아
+    // "이탈인데 장애물 감지로 표시"되는 불일치가 생긴다 — 둘을 같이 갱신한다.
+    const patch = (d: Device): Device => ({
+      ...d,
+      status: latest.deviceStatus!,
+      status_name: latest.deviceStatusName ?? d.status_name,
+    });
+    setDevices((prev) => prev.map((d) => (d.extinguisher_id === latest.extinguisherId ? patch(d) : d)));
+    setSelectedDevice((prev) =>
+      prev && prev.extinguisher_id === latest.extinguisherId ? patch(prev) : prev,
     );
   }, [realtime.events]);
 

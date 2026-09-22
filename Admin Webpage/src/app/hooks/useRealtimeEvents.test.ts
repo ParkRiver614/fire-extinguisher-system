@@ -170,4 +170,63 @@ describe("useRealtimeEvents", () => {
 
     await expect(result.current.resolveAlert("missing-id")).rejects.toThrow();
   });
+
+  // 서버는 UTC를 그대로 strftime한 `time` 문자열을 같이 보낸다. 그걸 쓰면 KST에서 9시간
+  // 어긋나므로, timestamp를 변환한 값에서 포맷해야 한다.
+  it("formats event time from the timestamp, ignoring the server's raw UTC time string", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/alerts")) return Promise.resolve(jsonResponse({ alerts: [] }));
+      if (url.includes("/api/events"))
+        return Promise.resolve(
+          jsonResponse({
+            events: [{ id: "e-tz", text: "장애물 감지", type: "warning", timestamp: "2026-09-22T01:46:00", time: "01:46" }],
+          }),
+        );
+      return Promise.reject(new Error(`unexpected url ${url}`));
+    });
+
+    const { result } = renderHook(() => useRealtimeEvents(true));
+
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    // 01:46 UTC == 10:46 KST. 서버가 준 "01:46"을 그대로 쓰면 이 단정이 깨진다.
+    const expected = new Date("2026-09-22T01:46:00Z").toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    expect(result.current.events[0].time).toBe(expected);
+    expect(result.current.events[0].time).not.toBe("01:46");
+  });
+
+  // 상세 헤더가 읽는 한글 라벨. status(missing->error)로는 되돌릴 수 없어 서버가 같이 내려준다.
+  it("carries status_name from a streamed event so the device label can be patched", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/alerts")) return Promise.resolve(jsonResponse({ alerts: [] }));
+      if (url.includes("/api/events")) return Promise.resolve(jsonResponse({ events: [] }));
+      return Promise.reject(new Error(`unexpected url ${url}`));
+    });
+
+    const { result } = renderHook(() => useRealtimeEvents(true));
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
+
+    act(() => {
+      MockEventSource.instances[0].emitMessage({
+        type: "event.created",
+        event: {
+          id: "EVT-999",
+          type: "warning",
+          text: "이탈/분실 감지",
+          timestamp: "2026-09-22T02:15:28",
+          extinguisher_id: 78,
+          status: "error",
+          status_name: "이탈/분실",
+        },
+      });
+    });
+
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    expect(result.current.events[0].extinguisherId).toBe(78);
+    expect(result.current.events[0].deviceStatus).toBe("error");
+    expect(result.current.events[0].deviceStatusName).toBe("이탈/분실");
+  });
 });

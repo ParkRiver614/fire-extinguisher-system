@@ -5,7 +5,9 @@
 // ==================== 핀 및 설정 정의 ====================
 // 1. 가스 센서 (화재 감지)
 #define GAS_PIN 34
-#define GAS_THRESHOLD 1200  // 가스 감지 기준값 (평상시 ~600 raw 기준, 오경보 줄이려 상향)
+#define GAS_THRESHOLD 1000  // 가스 감지 기준값. Pi의 FIRE_GAS_THRESHOLD와 같은 값으로 유지할 것 —
+                            // 어긋나면 현장 부저는 울리는데 서버는 모르는(또는 그 반대) 상태가 된다.
+                            // 실측(2026-09-08): 평상 411~773, 라이터 최고 2398.
 
 // 2. 로드셀 (HX711) — 같은 받침대를 두 지점에서 지지, 합산해서 하나의 무게값으로 사용
 #define LOADCELL_DOUT_PIN 25
@@ -58,13 +60,24 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
 
   // 로드셀 초기화 (2개 각각 영점/보정 후 loop에서 합산)
+  // tare()는 내부적으로 wait_ready()를 돌며 HX711이 응답할 때까지 무한 대기한다.
+  // 로드셀 접촉이 불량하면 setup()이 끝나지 않아 가스·화재 감지까지 통째로 멈추므로,
+  // 반드시 타임아웃을 두고 응답이 없으면 영점 없이 넘어간다.
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   scale.set_scale(calibration_factor);
-  scale.tare();
+  if (scale.wait_ready_timeout(1000)) {
+    scale.tare();
+  } else {
+    Serial.println("[WARN] LOADCELL1 not ready - tare skipped");
+  }
 
   scale2.begin(LOADCELL2_DOUT_PIN, LOADCELL2_SCK_PIN);
   scale2.set_scale(calibration_factor2);
-  scale2.tare();
+  if (scale2.wait_ready_timeout(1000)) {
+    scale2.tare();
+  } else {
+    Serial.println("[WARN] LOADCELL2 not ready - tare skipped");
+  }
 
   // DHT 센서 초기화
   dht.begin();
@@ -88,8 +101,9 @@ void loop() {
   int gasValue = analogRead(GAS_PIN);
 
   float weight = 0;
-  if (scale.is_ready())  weight += scale.get_units(1);
-  if (scale2.is_ready()) weight += scale2.get_units(1);
+  bool weightOk = false;   // 둘 다 응답 없으면 무게를 아예 안 보낸다 (0g으로 보내면 이탈로 오탐)
+  if (scale.is_ready())  { weight += scale.get_units(1);  weightOk = true; }
+  if (scale2.is_ready()) { weight += scale2.get_units(1); weightOk = true; }
   if (weight < 0) weight = 0;   // 음수 방지
 
   // 온습도 읽기
@@ -99,8 +113,10 @@ void loop() {
   // 2. 시리얼 출력 — Pi(sensors_esp32.py)가 파싱하는 실제 포맷: KEY:VALUE 콤마 구분
   Serial.print("GAS:");
   Serial.print(gasValue);
-  Serial.print(",WEIGHT:");
-  Serial.print(weight, 1);
+  if (weightOk) {
+    Serial.print(",WEIGHT:");
+    Serial.print(weight, 1);
+  }
   Serial.print(",TEMP:");
   Serial.print(isnan(temperature) ? 0.0 : temperature, 1);
   Serial.print(",HUM:");

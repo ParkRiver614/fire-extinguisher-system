@@ -49,6 +49,7 @@ export interface FloorConfig {
   zones: string;
   mapFileName: string;
   defaultMapUrl?: string;
+  imageRatio?: number; // 도면 이미지의 height/width 비율. 층마다 이미지 모양이 달라서 FloorMap이 SVG 캔버스 크기를 여기 맞춰 계산한다.
 }
 
 // 서버에서 층 정보를 못 받았을 때 쓰는 기본 층 구성(평면도·보고서도 이 값을 공유한다).
